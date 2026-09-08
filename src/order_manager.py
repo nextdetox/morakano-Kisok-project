@@ -1,4 +1,5 @@
 # src/order_manager.py
+# [수정] 1번째 줄 앞에 실수로 들어가 있던 공백 4칸 제거 (기능 변화 없음, staged된 오타성 변경 정리)
 
 # 메뉴를 구조화된 데이터(dict)로 관리 -> 항목 추가/가격 변경 시 여기만 고치면 됨
 MENU_DATA = {
@@ -6,6 +7,38 @@ MENU_DATA = {
     "2": {"name": "오징어", "price": 5000},
     "3": {"name": "콜라", "price": 5500},
 }
+
+
+# [추가] llm.py가 반환하는 order_data는 검증 없이 그대로 넘어옴.
+# llm.py 쪽 프롬프트/모델이 스키마를 어기면(메뉴에 없는 이름, 수량이 숫자가 아님 등)
+# confirm_order가 그대로 신뢰하다가 죽거나 이상 동작하므로, order_manager 쪽에서
+# 방어적으로 한 번 걸러준다. (llm.py/main.py는 수정하지 않음 — 담당 모듈만 손댐)
+def _validate_orders(orders: list) -> list:
+    valid_names = {item["name"] for item in MENU_DATA.values()}
+    cleaned = []
+
+    for item in orders:
+        menu = item.get("menu")
+        qty = item.get("qty")
+
+        # 메뉴판에 없는 이름이면 항목 자체를 버림
+        if menu not in valid_names:
+            print(f"[시스템] '{menu}'은(는) 메뉴에 없는 항목이라 제외합니다.")
+            continue
+
+        # 수량이 없거나 잘못된 값이면 1개로 보정
+        if not isinstance(qty, int) or qty <= 0:
+            print(f"[시스템] '{menu}'의 수량({qty})이 올바르지 않아 1개로 처리합니다.")
+            qty = 1
+
+        requests = item.get("requests")
+        cleaned.append({
+            "menu": menu,
+            "qty": qty,
+            "requests": requests if isinstance(requests, list) else [],
+        })
+
+    return cleaned
 
 
 # 메뉴판 출력 (천 단위 쉼표 등 이쁘게 포맷팅)
@@ -25,7 +58,8 @@ def confirm_order(order_data: dict) -> bool:
     - 수정          : 특정 항목의 수량/요청사항 수정 후 다시 확인
     - 다시          : 내용 변경 없이 주문 내역만 다시 보여줌 (다시듣기)
     """
-    orders = order_data.get("orders", [])
+    # [수정] 검증 안 된 orders를 바로 쓰지 않고 _validate_orders를 거치도록 변경
+    orders = _validate_orders(order_data.get("orders", []))
 
     while True:
         print("\n[시스템] 주문하신 내역을 확인해 주세요:")
